@@ -135,31 +135,35 @@ if [ "${CORS_ENABLED}" = "true" ]; then
       CORS_ALLOW_CREDENTIALS="false"
     fi
 
-    sed -i "\:</web-app>:i\\
-    <filter>\n\
-      <filter-name>DockerGeoServerCorsFilter</filter-name>\n\
-      <filter-class>org.apache.catalina.filters.CorsFilter</filter-class>\n\
-      <init-param>\n\
-          <param-name>cors.allowed.origins</param-name>\n\
-          <param-value>${CORS_ALLOWED_ORIGINS}</param-value>\n\
-      </init-param>\n\
-      <init-param>\n\
-          <param-name>cors.allowed.methods</param-name>\n\
-          <param-value>${CORS_ALLOWED_METHODS}</param-value>\n\
-      </init-param>\n\
-      <init-param>\n\
-        <param-name>cors.allowed.headers</param-name>\n\
-        <param-value>${CORS_ALLOWED_HEADERS}</param-value>\n\
-      </init-param>\n\
-      <init-param>\n\
-        <param-name>cors.support.credentials</param-name>\n\
-        <param-value>${CORS_ALLOW_CREDENTIALS}</param-value>\n\
-      </init-param>\n\
-    </filter>\n\
-    <filter-mapping>\n\
-      <filter-name>DockerGeoServerCorsFilter</filter-name>\n\
-      <url-pattern>/*</url-pattern>\n\
-    </filter-mapping>" "$CATALINA_HOME/webapps/geoserver/WEB-INF/web.xml";
+sed -i "\:</web-app>:i\\
+<filter>\n\
+<filter-name>DockerGeoServerCorsFilter</filter-name>\n\
+<filter-class>org.apache.catalina.filters.CorsFilter</filter-class>\n\
+<init-param>\n\
+<param-name>cors.allowed.origins</param-name>\n\
+<param-value>${CORS_ALLOWED_ORIGINS}</param-value>\n\
+</init-param>\n\
+<init-param>\n\
+<param-name>cors.allowed.methods</param-name>\n\
+<param-value>${CORS_ALLOWED_METHODS}</param-value>\n\
+</init-param>\n\
+<init-param>\n\
+<param-name>cors.allowed.headers</param-name>\n\
+<param-value>${CORS_ALLOWED_HEADERS}</param-value>\n\
+</init-param>\n\
+<init-param>\n\
+<param-name>cors.support.credentials</param-name>\n\
+<param-value>${CORS_ALLOW_CREDENTIALS}</param-value>\n\
+</init-param>\n\
+</filter>\n\
+<filter-mapping>\n\
+<filter-name>DockerGeoServerCorsFilter</filter-name>\n\
+<url-pattern>/*</url-pattern>\n\
+</filter-mapping>\n\
+<context-param>\n\
+<param-name>GEOSERVER_CSRF_DISABLED</param-name>\n\
+<param-value>true</param-value>\n\
+</context-param>" "$CATALINA_HOME/webapps/geoserver/WEB-INF/web.xml";
   fi
 fi
 
