@@ -1,49 +1,22 @@
-FROM tomcat:9.0.93-jdk11-temurin-jammy@sha256:a2c5dc10a3225e9b89269b041c2087db5ae9371cdc33afbefe36a863e63237e6
-LABEL vendor="osgeo.org"
+FROM ubuntu:22.04 as tomcat
 
-# Build arguments
-ARG ADDITIONAL_FONTS_PATH=./additional_fonts/
-ARG ADDITIONAL_LIBS_PATH=./additional_libs/
-ARG COMMUNITY_PLUGIN_URL=''
-ARG CORS_ALLOWED_HEADERS=*
-ARG CORS_ALLOWED_METHODS=GET,POST,PUT,DELETE,HEAD,OPTIONS
-ARG CORS_ALLOWED_ORIGINS=*
-ARG CORS_ALLOW_CREDENTIALS=false
+ARG TOMCAT_VERSION=9.0.89
 ARG CORS_ENABLED=false
-ARG GS_BUILD=release
-ARG GS_DATA_PATH=./geoserver_data/
-ARG GS_VERSION=2.25.2
-ARG STABLE_PLUGIN_URL=https://downloads.sourceforge.net/project/geoserver/GeoServer/${GS_VERSION}/extensions
-ARG WAR_ZIP_URL=https://downloads.sourceforge.net/project/geoserver/GeoServer/${GS_VERSION}/geoserver-${GS_VERSION}-war.zip
+ARG CORS_ALLOWED_ORIGINS=*
+ARG CORS_ALLOWED_METHODS=GET,POST,PUT,DELETE,HEAD,OPTIONS
+ARG CORS_ALLOWED_HEADERS=*
+ARG CORS_ALLOW_CREDENTIALS=false
 
 # Environment variables
-ENV ADDITIONAL_FONTS_DIR=/opt/additional_fonts/
-ENV ADDITIONAL_LIBS_DIR=/opt/additional_libs/
-ENV CATALINA_HOME=$CATALINA_HOME
-ENV COMMUNITY_EXTENSIONS=''
-ENV COMMUNITY_PLUGIN_URL=$COMMUNITY_PLUGIN_URL
-ENV CONFIG_DIR=/opt/config
-ENV CONFIG_OVERRIDES_DIR=/opt/config_overrides
-ENV CORS_ALLOWED_HEADERS=$CORS_ALLOWED_HEADERS
-ENV CORS_ALLOWED_METHODS=$CORS_ALLOWED_METHODS
-ENV CORS_ALLOWED_ORIGINS=$CORS_ALLOWED_ORIGINS
-ENV CORS_ALLOW_CREDENTIALS=$CORS_ALLOW_CREDENTIALS
-ENV CORS_ENABLED=$CORS_ENABLED
+ENV TOMCAT_VERSION=$TOMCAT_VERSION
+ENV CATALINA_HOME=/opt/apache-tomcat-${TOMCAT_VERSION}
 ENV EXTRA_JAVA_OPTS="-Xms256m -Xmx1g"
-ENV GEOSERVER_BUILD=$GS_BUILD
-ENV GEOSERVER_DATA_DIR=/opt/geoserver_data/
-ENV GEOSERVER_LIB_DIR=$CATALINA_HOME/webapps/geoserver/WEB-INF/lib/
-ENV GEOSERVER_REQUIRE_FILE=$GEOSERVER_DATA_DIR/global.xml
-ENV GEOSERVER_VERSION=$GS_VERSION
-ENV HEALTHCHECK_URL=''
-ENV INSTALL_EXTENSIONS=false
-ENV POSTGRES_JNDI_ENABLED=false
-ENV ROOT_WEBAPP_REDIRECT=false
-ENV SKIP_DEMO_DATA=false
-ENV STABLE_EXTENSIONS=''
-ENV STABLE_PLUGIN_URL=$STABLE_PLUGIN_URL
-ENV WAR_ZIP_URL=$WAR_ZIP_URL
-ENV WEBAPP_CONTEXT=geoserver
+ENV CORS_ENABLED=$CORS_ENABLED
+ENV CORS_ALLOWED_ORIGINS=$CORS_ALLOWED_ORIGINS
+ENV CORS_ALLOWED_METHODS=$CORS_ALLOWED_METHODS
+ENV CORS_ALLOWED_HEADERS=$CORS_ALLOWED_HEADERS
+ENV CORS_ALLOW_CREDENTIALS=$CORS_ALLOW_CREDENTIALS
+ENV DEBIAN_FRONTEND=noninteractive
 
 # see https://docs.geoserver.org/stable/en/user/production/container.html
 ENV CATALINA_OPTS="\$EXTRA_JAVA_OPTS \
@@ -56,31 +29,114 @@ ENV CATALINA_OPTS="\$EXTRA_JAVA_OPTS \
     -Dsun.java2d.renderer=sun.java2d.marlin.DMarlinRenderingEngine \
     -Dorg.geotools.coverage.jaiext.enabled=true"
 
+# init
+RUN apt update \
+    && apt -y upgrade \
+    && apt install -y --no-install-recommends locales openssl unzip gdal-bin wget curl openjdk-11-jdk gettext \
+    && apt clean \
+    && rm -rf /var/cache/apt/* \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /opt/
+
+RUN wget -q https://archive.apache.org/dist/tomcat/tomcat-9/v${TOMCAT_VERSION}/bin/apache-tomcat-${TOMCAT_VERSION}.tar.gz \
+    && tar xf apache-tomcat-${TOMCAT_VERSION}.tar.gz \
+    && rm apache-tomcat-${TOMCAT_VERSION}.tar.gz \
+    && rm -rf /opt/apache-tomcat-${TOMCAT_VERSION}/webapps/ROOT \
+    && rm -rf /opt/apache-tomcat-${TOMCAT_VERSION}/webapps/docs \
+    && rm -rf /opt/apache-tomcat-${TOMCAT_VERSION}/webapps/examples \
+    && rm -rf /opt/apache-tomcat-${TOMCAT_VERSION}/webapps/host-manager \
+    && rm -rf /opt/apache-tomcat-${TOMCAT_VERSION}/webapps/manager
+
+# cleanup
+RUN apt purge -y  \
+    && apt autoremove --purge -y \
+    && rm -rf /var/lib/apt/lists/* \
+    && rm -rf /tmp/*
+
+FROM tomcat as download
+
+ARG GS_VERSION=2.25.3
+ARG GS_BUILD=release
+ARG WAR_ZIP_URL=https://downloads.sourceforge.net/project/geoserver/GeoServer/${GS_VERSION}/geoserver-${GS_VERSION}-war.zip
+ARG JDBC_STORE_URL=https://build.geoserver.org/geoserver/2.25.x/community-latest/geoserver-2.25-SNAPSHOT-jdbcstore-plugin.zip
+ENV GEOSERVER_VERSION=$GS_VERSION
+ENV GEOSERVER_BUILD=$GS_BUILD
+
 WORKDIR /tmp
 
-# Install dependencies and download geoserver
-RUN set -eux \
-    && export DEBIAN_FRONTEND=noninteractive \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends openssl unzip curl locales gettext \
-    && apt-get clean \
-    && rm -rf /var/cache/apt/* \
-    && rm -rf /var/lib/apt/lists/* \
-    && echo "Downloading GeoServer ${GS_VERSION} ${GS_BUILD}" \
+RUN echo "Downloading GeoServer ${GS_VERSION} ${GS_BUILD}" \
     && wget -q -O /tmp/geoserver.zip $WAR_ZIP_URL \
     && unzip geoserver.zip geoserver.war -d /tmp/ \
     && unzip -q /tmp/geoserver.war -d /tmp/geoserver \
-    && rm /tmp/geoserver.war \
-    && echo "Installing GeoServer $GS_VERSION $GS_BUILD" \
-    && mv /tmp/geoserver $CATALINA_HOME/webapps/geoserver \
-    && mv $CATALINA_HOME/webapps/geoserver/WEB-INF/lib/marlin-*.jar $CATALINA_HOME/lib/marlin.jar \
-    && mv $CATALINA_HOME/webapps/geoserver/WEB-INF/lib/postgresql-*.jar $CATALINA_HOME/lib/ \
-    && mkdir -p $GEOSERVER_DATA_DIR
+    && rm /tmp/geoserver.war
 
-# Copy data and additional libs / fonts
+RUN echo "Downloading JDBCStore plugin" \
+    && wget -q -O /tmp/jdbcstore.zip $JDBC_STORE_URL \
+    && echo "JDBCStore plugin downloaded to /tmp/jdbcstore.zip" \
+    && ls -l /tmp/jdbcstore.zip \
+    && echo "Unzipping JDBCStore plugin" \
+    && unzip -q -o /tmp/jdbcstore.zip -d /tmp/geoserver/WEB-INF/lib/ \
+    && rm /tmp/jdbcstore.zip
+
+FROM tomcat as install
+
+ARG GS_VERSION=2.25.3
+ARG GS_BUILD=release
+ARG STABLE_PLUGIN_URL=https://downloads.sourceforge.net/project/geoserver/GeoServer/${GS_VERSION}/extensions
+ARG COMMUNITY_PLUGIN_URL=''
+
+ARG GS_DATA_PATH=./geoserver_data/
+ARG ADDITIONAL_LIBS_PATH=./additional_libs/
+ARG ADDITIONAL_FONTS_PATH=./additional_fonts/
+
+ENV GEOSERVER_VERSION=$GS_VERSION
+ENV GEOSERVER_BUILD=$GS_BUILD
+ENV GEOSERVER_DATA_DIR=/opt/geoserver_data/
+ENV GEOSERVER_REQUIRE_FILE=$GEOSERVER_DATA_DIR/global.xml
+ENV GEOSERVER_LIB_DIR=$CATALINA_HOME/webapps/geoserver/WEB-INF/lib/
+ENV INSTALL_EXTENSIONS=false
+ENV WAR_ZIP_URL=$WAR_ZIP_URL
+ENV STABLE_EXTENSIONS=''
+ENV STABLE_PLUGIN_URL=$STABLE_PLUGIN_URL
+ENV COMMUNITY_EXTENSIONS=''
+ENV COMMUNITY_PLUGIN_URL=$COMMUNITY_PLUGIN_URL
+ENV ADDITIONAL_LIBS_DIR=/opt/additional_libs/
+ENV ADDITIONAL_FONTS_DIR=/opt/additional_fonts/
+ENV SKIP_DEMO_DATA=false
+ENV ROOT_WEBAPP_REDIRECT=false
+ENV POSTGRES_JNDI_ENABLED=false
+ENV CONFIG_DIR=/opt/config
+ENV CONFIG_OVERRIDES_DIR=/opt/config_overrides
+ENV HEALTHCHECK_URL=http://localhost:8080/geoserver/web/wicket/resource/org.geoserver.web.GeoServerBasePage/img/logo.png
+
+ENV HTTPS_ENABLED=false
+ENV HTTPS_KEYSTORE_FILE=/opt/keystore.jks
+ENV HTTPS_KEYSTORE_PASSWORD=changeit
+ENV HTTPS_KEY_ALIAS=server
+
+EXPOSE 8080
+EXPOSE 8443
+
+WORKDIR /tmp
+
+RUN echo "en_US.UTF-8 UTF-8" >> /etc/locale.gen && locale-gen
+
+RUN echo "Installing GeoServer $GS_VERSION $GS_BUILD"
+
+COPY --from=download /tmp/geoserver $CATALINA_HOME/webapps/geoserver
+
+RUN mv $CATALINA_HOME/webapps/geoserver/WEB-INF/lib/marlin-*.jar $CATALINA_HOME/lib/marlin.jar \
+&& mkdir -p $GEOSERVER_DATA_DIR
+
+RUN mv $CATALINA_HOME/webapps/geoserver/WEB-INF/lib/postgresql-*.jar $CATALINA_HOME/lib/
+
 COPY $GS_DATA_PATH $GEOSERVER_DATA_DIR
 COPY $ADDITIONAL_LIBS_PATH $GEOSERVER_LIB_DIR
 COPY $ADDITIONAL_FONTS_PATH /usr/share/fonts/truetype/
+
+# cleanup
+RUN rm -rf /tmp/*
 
 # Add default configs
 COPY config $CONFIG_DIR
@@ -101,26 +157,13 @@ COPY *.sh /opt/
 # CIS Docker benchmark: Remove setuid and setgid permissions in the images to prevent privilege escalation attacks within containers.
 RUN find / -perm /6000 -type f -exec chmod a-s {} \; || true
 
-# cleanup
-RUN apt purge -y  \
-  && apt autoremove --purge -y \
-  && rm -rf /tmp/ \
-  && rm -rf $CATALINA_HOME/webapps/ROOT \
-  && rm -rf $CATALINA_HOME/webapps/docs \
-  && rm -rf $CATALINA_HOME/webapps/examples \
-  && rm -rf $CATALINA_HOME/webapps/host-manager \
-  && rm -rf $CATALINA_HOME/webapps/manager
-
 # GeoServer user => restrict access to $CATALINA_HOME and GeoServer directories
 # See also CIS Docker benchmark and docker best practices
-
 RUN chmod +x /opt/*.sh && sed -i 's/\r$//' /opt/startup.sh
 
 ENTRYPOINT ["bash", "/opt/startup.sh"]
 
 WORKDIR /opt
 
-EXPOSE 8080
-
 HEALTHCHECK --interval=1m --timeout=20s --retries=3 \
-  CMD curl --fail --url "$(cat $CATALINA_HOME/conf/healthcheck_url.txt)" || exit 1
+  CMD curl --fail $HEALTHCHECK_URL || exit 1
